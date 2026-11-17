@@ -97,6 +97,15 @@
         <select id="ec"><option value="L">L (7%)</option><option value="M" selected>M (15%)</option><option value="Q">Q (25%)</option><option value="H">H (30%)</option></select>
       </div>
     </div>
+    <details id="adv" style="margin-top:12px">
+      <summary class="note" style="font-weight:500">Advanced</summary>
+      <label for="ctype">QR content format</label>
+      <select id="ctype">
+        <option value="simple" selected>Simple text – decimal (AY-x30QR, default)</option>
+        <option value="kone">KONE – 8-digit lowercase hex</option>
+      </select>
+      <div class="msg warn hidden" id="koneWarn">KONE format is for KONE elevator destination-control readers. The AY-x30QR expects Simple text.</div>
+    </details>
   </div>
 
   <div class="card">
@@ -189,6 +198,7 @@
         <li><b>AY-x30QR wiring is non-standard:</b> blue-white = D1, green-white = D0, white = Card Present (not D1).</li>
         <li>Enroll the same facility code + card number in Qumulex / AxTraxPro. The CSV export lists them.</li>
         <li>Recommended size about 3 × 3 cm; scan distance 5–10 cm.</li>
+        <li><b>KONE</b> (Settings → Advanced): the same number as 8-digit lowercase hex, for KONE elevator readers. Example: 6565945 → <code>00643039</code>.</li>
       </ul>
     </details>
   </div>
@@ -209,17 +219,18 @@
     34: {fcMax:65535, cardMax:65535, label:'34-bit (16-bit facility, 16-bit card)'}
   };
   const SYM_NAMES = {qrcode:'QR', datamatrix:'Data Matrix', pdf417:'PDF417'};
-  const state = {fmt:26, sym:'qrcode', queue:[]};
+  const state = {fmt:26, sym:'qrcode', ctype:'simple', queue:[]};
 
   // ---------- storage (optional, per browser) ----------
-  function save(){ try{ localStorage.setItem('qrgen', JSON.stringify({fmt:state.fmt, sym:state.sym, queue:state.queue, size:$('size').value, ec:$('ec').value})); }catch(e){} }
+  function save(){ try{ localStorage.setItem('qrgen', JSON.stringify({fmt:state.fmt, sym:state.sym, ctype:state.ctype, queue:state.queue, size:$('size').value, ec:$('ec').value})); }catch(e){} }
   function load(){
     try{
       const s = JSON.parse(localStorage.getItem('qrgen')||'null');
       if(!s) return;
       if(s.fmt===26||s.fmt===34) state.fmt=s.fmt;
       if(SYM_NAMES[s.sym]) state.sym=s.sym;
-      if(Array.isArray(s.queue)) state.queue=s.queue.filter(q=>q&&Number.isInteger(q.fc)&&Number.isInteger(q.card)&&(q.fmt===26||q.fmt===34));
+      if(s.ctype==='kone') state.ctype='kone';
+      if(Array.isArray(s.queue)) state.queue=s.queue.filter(q=>q&&Number.isInteger(q.fc)&&Number.isInteger(q.card)&&(q.fmt===26||q.fmt===34)).map(q=>({...q, ctype:q.ctype==='kone'?'kone':'simple'}));
       if(s.size) $('size').value=s.size;
       if(s.ec) $('ec').value=s.ec;
     }catch(e){}
@@ -235,7 +246,9 @@
     if(card<0||card>f.cardMax) return `Card number must be 0–${f.cardMax.toLocaleString()}.`;
     return null;
   }
-  function credId(fc, card){ return fc*65536 + card; }   // Wiegand data bits as one decimal integer
+  function credId(fc, card){ return fc*65536 + card; }   // Wiegand data bits as one integer
+  // Text placed in the code: Simple text = decimal; KONE = 8-char lowercase hex (AxTraxPro QR types)
+  function content(fc, card, ctype){ const id=credId(fc,card); return ctype==='kone' ? id.toString(16).padStart(8,'0') : String(id); }
 
   function drawCode(canvas, text, sym, scale){
     const opts = {bcid:sym, text:String(text), scale:scale||4, backgroundcolor:'FFFFFF'};
@@ -256,6 +269,8 @@
   function refreshSettings(){
     $('fmtNote').textContent = FORMATS[state.fmt].label + '. Reader DIP 1 ' + (state.fmt===26?'OFF':'ON') + ', DIP 2 OFF.';
     $('symWarn').classList.toggle('hidden', state.sym==='qrcode');
+    $('ctype').value=state.ctype; $('koneWarn').classList.toggle('hidden', state.ctype!=='kone');
+    if(state.ctype==='kone') $('adv').open=true;
     renderSingle(); renderRange(); renderQueue();
   }
   document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
@@ -273,20 +288,20 @@
     ['sAdd','sPng','sPdf'].forEach(i=>$(i).disabled=!!err);
     const cv=$('sCanvas');
     if(err){ cv.width=cv.height=0; $('sId').textContent='–'; $('sFcCard').textContent='–'; $('sFmt').textContent='–'; return; }
-    const id=credId(fc,card);
+    const id=content(fc,card,state.ctype);
     try{ drawCode(cv, id, state.sym, 3); }catch(e){ showMsg('sErr','Could not draw code: '+e); }
     $('sId').textContent=id;
     $('sFcCard').textContent=fc+' / '+card;
-    $('sFmt').textContent=state.fmt+'-bit, '+SYM_NAMES[state.sym];
+    $('sFmt').textContent=state.fmt+'-bit, '+SYM_NAMES[state.sym]+(state.ctype==='kone'?', KONE hex':'');
   }
   ['sFc','sCard','sLabel'].forEach(i=>$(i).addEventListener('input',renderSingle));
   $('sAdd').onclick=()=>{ const v=singleVals(); addItems([{fc:v.fc,card:v.card,label:v.label}]); };
   $('sPng').onclick=()=>{
-    const {fc,card}=singleVals(); const id=credId(fc,card);
+    const {fc,card}=singleVals(); const id=content(fc,card,state.ctype);
     const c=document.createElement('canvas'); drawCode(c,id,state.sym,10);
     const a=document.createElement('a'); a.download=`${SYM_NAMES[state.sym].replace(' ','')}_${state.fmt}bit_FC${fc}_C${card}_${id}.png`; a.href=c.toDataURL('image/png'); a.click();
   };
-  $('sPdf').onclick=()=>{ const v=singleVals(); makePdf([{fc:v.fc,card:v.card,label:v.label,fmt:state.fmt}], `${state.fmt}bit_FC${v.fc}_C${v.card}.pdf`); };
+  $('sPdf').onclick=()=>{ const v=singleVals(); makePdf([{fc:v.fc,card:v.card,label:v.label,fmt:state.fmt,ctype:state.ctype}], `${state.fmt}bit_FC${v.fc}_C${v.card}.pdf`); };
 
   // ---------- range ----------
   function rangeVals(){ return {fc:parseInt0($('rFc').value), start:parseInt0($('rStart').value), count:parseInt0($('rCount').value), prefix:$('rPrefix').value}; }
@@ -295,7 +310,7 @@
     if(!Number.isInteger(count)||count<1||count>1000) err='How many must be 1–1,000.';
     else err = validate(fc,start,state.fmt) || validate(fc,start+count-1,state.fmt);
     showMsg('rErr', err); $('rAdd').disabled=!!err;
-    $('rSummary').textContent = err ? '' : `Cards ${start}–${start+count-1} at facility ${fc} → QR content ${credId(fc,start)} to ${credId(fc,start+count-1)}.`;
+    $('rSummary').textContent = err ? '' : `Cards ${start}–${start+count-1} at facility ${fc} → QR content ${content(fc,start,state.ctype)} to ${content(fc,start+count-1,state.ctype)}.`;
   }
   ['rFc','rStart','rCount','rPrefix'].forEach(i=>$(i).addEventListener('input',renderRange));
   $('rAdd').onclick=()=>{
@@ -330,18 +345,18 @@
 
   // ---------- queue ----------
   function addItems(items){
-    items.forEach(it=>state.queue.push({fc:it.fc,card:it.card,label:it.label||'',fmt:state.fmt}));
+    items.forEach(it=>state.queue.push({fc:it.fc,card:it.card,label:it.label||'',fmt:state.fmt,ctype:state.ctype}));
     renderQueue(); save();
   }
   function renderQueue(){
     const body=$('qBody'); body.innerHTML='';
     const seen=new Map(); let dups=0;
     state.queue.forEach((q,i)=>{
-      const id=credId(q.fc,q.card); const k=q.fmt+':'+id;
+      const id=content(q.fc,q.card,q.ctype); const k=q.fmt+':'+credId(q.fc,q.card);
       if(seen.has(k)) dups++; seen.set(k,1);
       const tr=document.createElement('tr');
       const tdl=document.createElement('td'); tdl.textContent=q.label;
-      tr.innerHTML=`<td>${i+1}</td><td class="num">${q.fc}</td><td class="num">${q.card}</td><td class="num">${id}${q.fmt!==state.fmt?` <span class="pill">${q.fmt}-bit</span>`:''}</td>`;
+      tr.innerHTML=`<td>${i+1}</td><td class="num">${q.fc}</td><td class="num">${q.card}</td><td class="num">${id}${q.fmt!==state.fmt?` <span class="pill">${q.fmt}-bit</span>`:''}${q.ctype==='kone'?' <span class="pill">KONE</span>':''}</td>`;
       tr.appendChild(tdl);
       const td=document.createElement('td'); const x=document.createElement('button'); x.className='x'; x.title='Remove'; x.textContent='×';
       x.onclick=()=>{ state.queue.splice(i,1); renderQueue(); save(); }; td.appendChild(x); tr.appendChild(td);
@@ -358,7 +373,7 @@
   $('clrBtn').onclick=()=>{ if(confirm('Clear all '+state.queue.length+' queued credentials?')){ state.queue=[]; renderQueue(); save(); } };
   $('csvBtn').onclick=()=>{
     const esc=s=>/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
-    const rows=[['Facility Code','Card Number','QR Content','Wiegand Format','Label']].concat(state.queue.map(q=>[q.fc,q.card,credId(q.fc,q.card),q.fmt+'-bit',q.label]));
+    const rows=[['Facility Code','Card Number','Credential ID (decimal)','QR Content','QR Type','Wiegand Format','Label']].concat(state.queue.map(q=>[q.fc,q.card,credId(q.fc,q.card),content(q.fc,q.card,q.ctype),q.ctype==='kone'?'KONE':'Simple text',q.fmt+'-bit',q.label]));
     const blob=new Blob([rows.map(r=>r.map(v=>esc(String(v))).join(',')).join('\r\n')+'\r\n'],{type:'text/csv'});
     const a=document.createElement('a'); a.download=`qr_credentials_${stamp()}.csv`; a.href=URL.createObjectURL(blob); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   };
@@ -376,7 +391,7 @@
     const labelH = 11, gapX = 8, gapY = 6;
     const cellW = Math.max(codeW, 34) + gapX;
     // code height depends on symbol aspect; measure from first render
-    const probe=document.createElement('canvas'); drawCode(probe, credId(items[0].fc,items[0].card), sym, 4);
+    const probe=document.createElement('canvas'); drawCode(probe, content(items[0].fc,items[0].card,items[0].ctype), sym, 4);
     const codeH = sym==='pdf417' ? codeW*probe.height/probe.width : size;
     const cellH = codeH + labelH + gapY;
     const cols=Math.max(1,Math.floor((PW-2*M+gapX)/cellW));
@@ -390,19 +405,19 @@
         doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(30);
         doc.text(`QR credentials · ${SYM_NAMES[sym]} · ${size/10} cm`, M, M+2);
         doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(110);
-        doc.text(`Print at 100% / Actual size. Content = facility × 65536 + card (AxTraxPro Simple text).   Page ${pi+1} of ${pages}`, M, M+6.5);
+        doc.text(`Print at 100% / Actual size. Content = facility × 65536 + card (AxTraxPro ${items.some(q=>q.ctype==='kone')?'Simple text / KONE hex':'Simple text'}).   Page ${pi+1} of ${pages}`, M, M+6.5);
       }
       const c=k%cols, r=Math.floor(k/cols);
       const x=offX + c*cellW, y=M+HEAD + r*cellH;
       const cx = x + (cellW-gapX-codeW)/2;
-      const id=credId(q.fc,q.card);
+      const id=content(q.fc,q.card,q.ctype);
       const cv=document.createElement('canvas'); drawCode(cv, id, sym, 8);
       doc.addImage(cv.toDataURL('image/png'),'PNG', cx, y, codeW, codeH);
       const mid = x + (cellW-gapX)/2;
       doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
       doc.text(`FC ${q.fc} / Card ${q.card}`, mid, y+codeH+4, {align:'center'});
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90);
-      doc.text(`${id} · ${q.fmt}-bit`, mid, y+codeH+7.5, {align:'center'});
+      doc.text(`${id} · ${q.fmt}-bit${q.ctype==='kone'?' · KONE':''}`, mid, y+codeH+7.5, {align:'center'});
       if(q.label){ doc.setTextColor(20); doc.text(doc.splitTextToSize(q.label, cellW-gapX)[0], mid, y+codeH+10.8, {align:'center'}); }
     });
     doc.save(filename);
@@ -412,6 +427,7 @@
   load();
   seg('fmtSeg','fmt',refreshSettings);
   seg('symSeg','sym',refreshSettings);
+  $('ctype').addEventListener('change',()=>{ state.ctype=$('ctype').value; save(); refreshSettings(); });
   $('size').addEventListener('change',save); $('ec').addEventListener('change',()=>{save();renderSingle();});
   refreshSettings();
 })();

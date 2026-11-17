@@ -24,6 +24,8 @@ QR content = `facility × 65536 + card`, written as a decimal number. The reader
 
 Example: facility 100, card 12345 → `6565945`.
 
+**KONE (rarely used):** Settings → Advanced → QR content format → KONE writes the same number as 8-digit lowercase hex (`6565945` → `00643039`), matching AxTraxPro's KONE QR type for KONE elevator destination-control readers. The AY-x30QR expects Simple text.
+
 ## Reader notes (AY-x30QR)
 
 - The wiring is **not** the usual Rosslare colors: blue-white = D1, green-white = D0, white = Card Present (not D1).
