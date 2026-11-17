@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Credential Generator – Wiegand 26/34-bit</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#1d2330; --muted:#5f6b7a; --line:#dfe3e8;
+    --accent:#1f5fbf; --accent-ink:#fff; --warn:#a15c00; --warn-bg:#fff4e0; --err:#b3261e; --err-bg:#fdecea; --ok:#1e7b34;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:#1d2330;color:#fff;padding:18px 24px}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header p{margin:4px 0 0;color:#c4cbd6;font-size:13px}
+  main{max-width:1180px;margin:0 auto;padding:20px;display:grid;grid-template-columns:400px 1fr;gap:20px}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:20px}
+  .card h2{margin:0 0 12px;font-size:15px;font-weight:600}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input[type=number],input[type=text],select,textarea{width:100%;padding:8px 10px;border:1px solid #c9cfd8;border-radius:6px;font:inherit;background:#fff;color:var(--ink)}
+  textarea{min-height:120px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .seg{display:flex;border:1px solid #c9cfd8;border-radius:6px;overflow:hidden}
+  .seg button{flex:1;border:0;background:#fff;padding:8px 6px;font:inherit;cursor:pointer;color:var(--ink)}
+  .seg button+button{border-left:1px solid #c9cfd8}
+  .seg button.on{background:var(--accent);color:var(--accent-ink)}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-4px 0 12px}
+  .tabs button{border:0;background:none;padding:8px 12px;font:inherit;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  .btn{display:inline-block;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:6px;font:inherit;cursor:pointer}
+  .btn.sec{background:#fff;color:var(--accent)}
+  .btn.danger{background:#fff;color:var(--err);border-color:#e3b4b0}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .msg{font-size:13px;padding:8px 10px;border-radius:6px;margin-top:10px}
+  .msg.err{background:var(--err-bg);color:var(--err)}
+  .msg.warn{background:var(--warn-bg);color:var(--warn)}
+  .msg.ok{background:#e8f5ec;color:var(--ok)}
+  .hidden{display:none}
+  .preview{display:flex;gap:18px;align-items:center;margin-top:14px;padding:12px;border:1px dashed var(--line);border-radius:8px;min-height:150px}
+  .preview canvas{max-width:150px;max-height:150px;image-rendering:pixelated}
+  .kv{font-size:13px}
+  .kv div{margin:2px 0}
+  .kv b{display:inline-block;min-width:96px;color:var(--muted);font-weight:500}
+  .big{font-size:22px;font-weight:600;font-family:ui-monospace,Consolas,monospace}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:500;position:sticky;top:0;background:#fff}
+  td.num{font-family:ui-monospace,Consolas,monospace}
+  .qwrap{max-height:430px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+  .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1}
+  .x:hover{color:var(--err)}
+  .empty{color:var(--muted);text-align:center;padding:30px}
+  .note{font-size:12.5px;color:var(--muted)}
+  .note code{background:#eef1f5;padding:1px 4px;border-radius:3px}
+  details summary{cursor:pointer;font-weight:600;font-size:14px}
+  details ul{margin:8px 0 0;padding-left:18px;font-size:13px}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:#eef1f5;color:var(--muted);margin-left:6px;vertical-align:middle}
+  .pill.untested{background:var(--warn-bg);color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>QR Credential Generator</h1>
+  <p>Makes QR / 2D codes for Rosslare AY-x30QR readers in AxTraxPro "Simple text" format (credential ID in decimal). Everything runs in your browser.</p>
+</header>
+
+<main>
+<section>
+  <div class="card">
+    <h2>Settings</h2>
+    <label>Wiegand format (must match the reader's DIP switches)</label>
+    <div class="seg" id="fmtSeg">
+      <button data-v="26" class="on">26-bit</button>
+      <button data-v="34">34-bit</button>
+    </div>
+    <div class="note" id="fmtNote" style="margin-top:6px"></div>
+
+    <label>Code type</label>
+    <div class="seg" id="symSeg">
+      <button data-v="qrcode" class="on">QR</button>
+      <button data-v="datamatrix">Data Matrix</button>
+      <button data-v="pdf417">PDF417</button>
+    </div>
+    <div class="msg warn hidden" id="symWarn">Not yet tested on the AY-x30QR. QR is confirmed working; 1D barcodes do not read.</div>
+
+    <div class="row">
+      <div>
+        <label for="size">Code size on PDF (cm)</label>
+        <input type="number" id="size" min="1.5" max="8" step="0.5" value="3">
+      </div>
+      <div>
+        <label for="ec">QR error correction</label>
+        <select id="ec"><option value="L">L (7%)</option><option value="M" selected>M (15%)</option><option value="Q">Q (25%)</option><option value="H">H (30%)</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabs" id="tabs">
+      <button data-t="single" class="on">Single</button>
+      <button data-t="range">Range</button>
+      <button data-t="list">Paste list</button>
+    </div>
+
+    <div id="t-single">
+      <div class="row">
+        <div><label for="sFc">Facility code</label><input type="number" id="sFc" value="100" min="0"></div>
+        <div><label for="sCard">Card number</label><input type="number" id="sCard" value="12345" min="0"></div>
+      </div>
+      <label for="sLabel">Label (optional, printed under the code)</label>
+      <input type="text" id="sLabel" maxlength="40" placeholder="e.g. Visitor 1">
+      <div class="preview" id="sPrev">
+        <canvas id="sCanvas"></canvas>
+        <div class="kv">
+          <div><b>QR content</b><span class="big" id="sId">–</span></div>
+          <div><b>Facility / card</b><span id="sFcCard">–</span></div>
+          <div><b>Format</b><span id="sFmt">–</span></div>
+        </div>
+      </div>
+      <div class="msg err hidden" id="sErr"></div>
+      <div class="btns">
+        <button class="btn" id="sAdd">Add to queue</button>
+        <button class="btn sec" id="sPng">Download PNG</button>
+        <button class="btn sec" id="sPdf">PDF of this code</button>
+      </div>
+    </div>
+
+    <div id="t-range" class="hidden">
+      <div class="row3">
+        <div><label for="rFc">Facility code</label><input type="number" id="rFc" value="100" min="0"></div>
+        <div><label for="rStart">First card #</label><input type="number" id="rStart" value="1000" min="0"></div>
+        <div><label for="rCount">How many</label><input type="number" id="rCount" value="25" min="1" max="1000"></div>
+      </div>
+      <label for="rPrefix">Label prefix (optional; card number is appended)</label>
+      <input type="text" id="rPrefix" maxlength="30" placeholder="e.g. Visitor ">
+      <div class="note" id="rSummary" style="margin-top:8px"></div>
+      <div class="msg err hidden" id="rErr"></div>
+      <div class="btns"><button class="btn" id="rAdd">Add range to queue</button></div>
+    </div>
+
+    <div id="t-list" class="hidden">
+      <label for="lText">One credential per line: <code>facility,card</code> or <code>facility,card,label</code></label>
+      <textarea id="lText" placeholder="100,12345,Visitor 1&#10;100,12346,Visitor 2&#10;100,12347"></textarea>
+      <div class="msg err hidden" id="lErr"></div>
+      <div class="btns"><button class="btn" id="lAdd">Add list to queue</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Decode a number</h2>
+    <div class="note">Paste a credential ID (the number inside a QR) to see its facility code and card number.</div>
+    <div class="row" style="margin-top:6px">
+      <div><input type="number" id="dId" placeholder="6565945" min="0"></div>
+      <div class="kv" id="dOut" style="padding-top:8px">–</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="card">
+    <h2>Queue <span class="pill" id="qCount">0</span></h2>
+    <div class="qwrap">
+      <table>
+        <thead><tr><th>#</th><th>Facility</th><th>Card</th><th>QR content</th><th>Label</th><th></th></tr></thead>
+        <tbody id="qBody"></tbody>
+      </table>
+      <div class="empty" id="qEmpty">Nothing queued. Add a single code, a range, or a pasted list.</div>
+    </div>
+    <div class="msg warn hidden" id="qWarn"></div>
+    <div class="btns">
+      <button class="btn" id="pdfBtn" disabled>Download PDF</button>
+      <button class="btn sec" id="csvBtn" disabled>Download CSV (for enrollment)</button>
+      <button class="btn danger" id="clrBtn" disabled>Clear queue</button>
+    </div>
+    <div class="note" style="margin-top:10px">PDF is US Letter. Print at <b>100% / Actual size</b>, not "Fit to page", so codes stay the size you set.</div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>How it works / reader setup</summary>
+      <ul>
+        <li><b>QR content</b> = facility × 65,536 + card, written as a plain decimal number (AxTraxPro "Simple text" QR type). Example: facility 100, card 12345 → <code>6565945</code>.</li>
+        <li><b>26-bit:</b> facility 0–255, card 0–65,535. <b>34-bit:</b> facility 0–65,535, card 0–65,535. The reader adds the parity bits.</li>
+        <li><b>Reader DIP switches:</b> DIP 1 OFF + DIP 2 OFF = 26-bit; DIP 1 ON + DIP 2 OFF = 34-bit. Power-cycle the reader after changing them.</li>
+        <li><b>AY-x30QR wiring is non-standard:</b> blue-white = D1, green-white = D0, white = Card Present (not D1).</li>
+        <li>Enroll the same facility code + card number in Qumulex / AxTraxPro. The CSV export lists them.</li>
+        <li>Recommended size about 3 × 3 cm; scan distance 5–10 cm.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bwip-js@4.11.4/dist/bwip-js-min.js" integrity="sha384-e1VuyRoRLeveqki66un7qGArmRgF0MWKljJjRgwfnTp54glS4QO3T0piWBbSFyfO" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js" integrity="sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3" crossorigin="anonymous"></script>
+<script>
+(function(){
+  if(!window.bwipjs || !window.jspdf){
+    document.querySelector('main').innerHTML='<div class="card" style="grid-column:1/-1"><h2>Could not load the barcode/PDF libraries</h2><p class="note">This page loads bwip-js and jsPDF from cdn.jsdelivr.net. Check your network or firewall, then reload.</p></div>';
+    return;
+  }
+  const $ = id => document.getElementById(id);
+  const FORMATS = {
+    26: {fcMax:255,   cardMax:65535, label:'26-bit (8-bit facility, 16-bit card)'},
+    34: {fcMax:65535, cardMax:65535, label:'34-bit (16-bit facility, 16-bit card)'}
+  };
+  const SYM_NAMES = {qrcode:'QR', datamatrix:'Data Matrix', pdf417:'PDF417'};
+  const state = {fmt:26, sym:'qrcode', queue:[]};
+
+  // ---------- storage (optional, per browser) ----------
+  function save(){ try{ localStorage.setItem('qrgen', JSON.stringify({fmt:state.fmt, sym:state.sym, queue:state.queue, size:$('size').value, ec:$('ec').value})); }catch(e){} }
+  function load(){
+    try{
+      const s = JSON.parse(localStorage.getItem('qrgen')||'null');
+      if(!s) return;
+      if(s.fmt===26||s.fmt===34) state.fmt=s.fmt;
+      if(SYM_NAMES[s.sym]) state.sym=s.sym;
+      if(Array.isArray(s.queue)) state.queue=s.queue.filter(q=>q&&Number.isInteger(q.fc)&&Number.isInteger(q.card)&&(q.fmt===26||q.fmt===34));
+      if(s.size) $('size').value=s.size;
+      if(s.ec) $('ec').value=s.ec;
+    }catch(e){}
+  }
+
+  // ---------- encoding ----------
+  function parseInt0(v){ const s=String(v).trim(); if(!/^\d+$/.test(s)) return NaN; return parseInt(s,10); }
+  function validate(fc, card, fmt){
+    const f=FORMATS[fmt];
+    if(!Number.isInteger(fc)) return 'Facility code must be a whole number.';
+    if(!Number.isInteger(card)) return 'Card number must be a whole number.';
+    if(fc<0||fc>f.fcMax) return `Facility code must be 0–${f.fcMax.toLocaleString()} for ${fmt}-bit.`;
+    if(card<0||card>f.cardMax) return `Card number must be 0–${f.cardMax.toLocaleString()}.`;
+    return null;
+  }
+  function credId(fc, card){ return fc*65536 + card; }   // Wiegand data bits as one decimal integer
+
+  function drawCode(canvas, text, sym, scale){
+    const opts = {bcid:sym, text:String(text), scale:scale||4, backgroundcolor:'FFFFFF'};
+    if(sym==='qrcode') opts.eclevel = $('ec').value;
+    if(sym==='pdf417'){ opts.columns = 2; opts.rowmult = 3; }
+    bwipjs.toCanvas(canvas, opts);
+    return canvas;
+  }
+
+  // ---------- UI: segmented controls & tabs ----------
+  function seg(id, key, after){
+    const el=$(id);
+    el.querySelectorAll('button').forEach(b=>{
+      b.classList.toggle('on', String(state[key])===b.dataset.v);
+      b.onclick=()=>{ state[key]= key==='fmt'?parseInt(b.dataset.v,10):b.dataset.v; el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); after(); save(); };
+    });
+  }
+  function refreshSettings(){
+    $('fmtNote').textContent = FORMATS[state.fmt].label + '. Reader DIP 1 ' + (state.fmt===26?'OFF':'ON') + ', DIP 2 OFF.';
+    $('symWarn').classList.toggle('hidden', state.sym==='qrcode');
+    renderSingle(); renderRange(); renderQueue();
+  }
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
+    ['single','range','list'].forEach(t=>$('t-'+t).classList.toggle('hidden', t!==b.dataset.t));
+  });
+
+  function showMsg(id, text){ const el=$(id); el.textContent=text||''; el.classList.toggle('hidden', !text); }
+
+  // ---------- single ----------
+  function singleVals(){ return {fc:parseInt0($('sFc').value), card:parseInt0($('sCard').value), label:$('sLabel').value.trim()}; }
+  function renderSingle(){
+    const {fc,card}=singleVals(); const err=validate(fc,card,state.fmt);
+    showMsg('sErr', err);
+    ['sAdd','sPng','sPdf'].forEach(i=>$(i).disabled=!!err);
+    const cv=$('sCanvas');
+    if(err){ cv.width=cv.height=0; $('sId').textContent='–'; $('sFcCard').textContent='–'; $('sFmt').textContent='–'; return; }
+    const id=credId(fc,card);
+    try{ drawCode(cv, id, state.sym, 3); }catch(e){ showMsg('sErr','Could not draw code: '+e); }
+    $('sId').textContent=id;
+    $('sFcCard').textContent=fc+' / '+card;
+    $('sFmt').textContent=state.fmt+'-bit, '+SYM_NAMES[state.sym];
+  }
+  ['sFc','sCard','sLabel'].forEach(i=>$(i).addEventListener('input',renderSingle));
+  $('sAdd').onclick=()=>{ const v=singleVals(); addItems([{fc:v.fc,card:v.card,label:v.label}]); };
+  $('sPng').onclick=()=>{
+    const {fc,card}=singleVals(); const id=credId(fc,card);
+    const c=document.createElement('canvas'); drawCode(c,id,state.sym,10);
+    const a=document.createElement('a'); a.download=`${SYM_NAMES[state.sym].replace(' ','')}_${state.fmt}bit_FC${fc}_C${card}_${id}.png`; a.href=c.toDataURL('image/png'); a.click();
+  };
+  $('sPdf').onclick=()=>{ const v=singleVals(); makePdf([{fc:v.fc,card:v.card,label:v.label,fmt:state.fmt}], `${state.fmt}bit_FC${v.fc}_C${v.card}.pdf`); };
+
+  // ---------- range ----------
+  function rangeVals(){ return {fc:parseInt0($('rFc').value), start:parseInt0($('rStart').value), count:parseInt0($('rCount').value), prefix:$('rPrefix').value}; }
+  function renderRange(){
+    const {fc,start,count}=rangeVals(); let err=null;
+    if(!Number.isInteger(count)||count<1||count>1000) err='How many must be 1–1,000.';
+    else err = validate(fc,start,state.fmt) || validate(fc,start+count-1,state.fmt);
+    showMsg('rErr', err); $('rAdd').disabled=!!err;
+    $('rSummary').textContent = err ? '' : `Cards ${start}–${start+count-1} at facility ${fc} → QR content ${credId(fc,start)} to ${credId(fc,start+count-1)}.`;
+  }
+  ['rFc','rStart','rCount','rPrefix'].forEach(i=>$(i).addEventListener('input',renderRange));
+  $('rAdd').onclick=()=>{
+    const {fc,start,count,prefix}=rangeVals(); const items=[];
+    for(let i=0;i<count;i++){ const c=start+i; items.push({fc,card:c,label:prefix?prefix+c:''}); }
+    addItems(items);
+  };
+
+  // ---------- paste list ----------
+  $('lAdd').onclick=()=>{
+    const lines=$('lText').value.split(/\r?\n/); const items=[]; const errs=[];
+    lines.forEach((ln,i)=>{
+      const t=ln.trim(); if(!t||t.startsWith('#')) return;
+      const parts=t.split(/[,\t;]/); const fc=parseInt0(parts[0]); const card=parseInt0(parts[1]??'');
+      const label=(parts.slice(2).join(',')||'').trim().slice(0,40);
+      const e=validate(fc,card,state.fmt);
+      if(e) errs.push(`Line ${i+1} ("${t}"): ${e}`); else items.push({fc,card,label});
+    });
+    if(errs.length){ showMsg('lErr', errs.slice(0,6).join('\n')+(errs.length>6?`\n…and ${errs.length-6} more`:'')+'\nNothing was added. Fix these lines and try again.'); $('lErr').style.whiteSpace='pre-line'; return; }
+    if(!items.length){ showMsg('lErr','No lines to add.'); return; }
+    showMsg('lErr',''); addItems(items);
+  };
+
+  // ---------- decode ----------
+  $('dId').addEventListener('input',()=>{
+    const v=parseInt0($('dId').value); const out=$('dOut');
+    if(!Number.isInteger(v)){ out.textContent='–'; return; }
+    if(v>0xFFFFFFFF){ out.textContent='Too large for 34-bit.'; return; }
+    const fc=Math.floor(v/65536), card=v%65536;
+    out.innerHTML=`<div><b>Facility</b>${fc}</div><div><b>Card</b>${card}</div><div><b>Fits</b>${fc<=255?'26-bit and 34-bit':'34-bit only'}</div>`;
+  });
+
+  // ---------- queue ----------
+  function addItems(items){
+    items.forEach(it=>state.queue.push({fc:it.fc,card:it.card,label:it.label||'',fmt:state.fmt}));
+    renderQueue(); save();
+  }
+  function renderQueue(){
+    const body=$('qBody'); body.innerHTML='';
+    const seen=new Map(); let dups=0;
+    state.queue.forEach((q,i)=>{
+      const id=credId(q.fc,q.card); const k=q.fmt+':'+id;
+      if(seen.has(k)) dups++; seen.set(k,1);
+      const tr=document.createElement('tr');
+      const tdl=document.createElement('td'); tdl.textContent=q.label;
+      tr.innerHTML=`<td>${i+1}</td><td class="num">${q.fc}</td><td class="num">${q.card}</td><td class="num">${id}${q.fmt!==state.fmt?` <span class="pill">${q.fmt}-bit</span>`:''}</td>`;
+      tr.appendChild(tdl);
+      const td=document.createElement('td'); const x=document.createElement('button'); x.className='x'; x.title='Remove'; x.textContent='×';
+      x.onclick=()=>{ state.queue.splice(i,1); renderQueue(); save(); }; td.appendChild(x); tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    const n=state.queue.length;
+    $('qCount').textContent=n; $('qEmpty').classList.toggle('hidden', n>0);
+    ['pdfBtn','csvBtn','clrBtn'].forEach(i=>$(i).disabled=n===0);
+    const mixed=new Set(state.queue.map(q=>q.fmt)).size>1;
+    const warns=[]; if(dups) warns.push(`${dups} duplicate credential${dups>1?'s':''} in the queue.`);
+    if(mixed) warns.push('The queue mixes 26-bit and 34-bit entries; each prints with its own format noted.');
+    showMsg('qWarn', warns.join(' '));
+  }
+  $('clrBtn').onclick=()=>{ if(confirm('Clear all '+state.queue.length+' queued credentials?')){ state.queue=[]; renderQueue(); save(); } };
+  $('csvBtn').onclick=()=>{
+    const esc=s=>/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+    const rows=[['Facility Code','Card Number','QR Content','Wiegand Format','Label']].concat(state.queue.map(q=>[q.fc,q.card,credId(q.fc,q.card),q.fmt+'-bit',q.label]));
+    const blob=new Blob([rows.map(r=>r.map(v=>esc(String(v))).join(',')).join('\r\n')+'\r\n'],{type:'text/csv'});
+    const a=document.createElement('a'); a.download=`qr_credentials_${stamp()}.csv`; a.href=URL.createObjectURL(blob); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  };
+  $('pdfBtn').onclick=()=>makePdf(state.queue, `qr_credentials_${stamp()}.pdf`);
+  function stamp(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
+
+  // ---------- PDF ----------
+  function makePdf(items, filename){
+    const { jsPDF } = window.jspdf;
+    const doc=new jsPDF({unit:'mm', format:'letter'});
+    const PW=215.9, PH=279.4, M=12, HEAD=12;
+    const size=Math.min(8,Math.max(1.5,parseFloat($('size').value)||3))*10; // mm
+    const sym=state.sym;
+    const codeW = sym==='pdf417' ? size*1.8 : size;
+    const labelH = 11, gapX = 8, gapY = 6;
+    const cellW = Math.max(codeW, 34) + gapX;
+    // code height depends on symbol aspect; measure from first render
+    const probe=document.createElement('canvas'); drawCode(probe, credId(items[0].fc,items[0].card), sym, 4);
+    const codeH = sym==='pdf417' ? codeW*probe.height/probe.width : size;
+    const cellH = codeH + labelH + gapY;
+    const cols=Math.max(1,Math.floor((PW-2*M+gapX)/cellW));
+    const rows=Math.max(1,Math.floor((PH-2*M-HEAD+gapY)/cellH));
+    const perPage=cols*rows, pages=Math.ceil(items.length/perPage);
+    const offX = M + ((PW-2*M) - (cols*cellW-gapX))/2;
+    items.forEach((q,i)=>{
+      const pi=Math.floor(i/perPage), k=i%perPage;
+      if(k===0){
+        if(pi>0) doc.addPage();
+        doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(30);
+        doc.text(`QR credentials · ${SYM_NAMES[sym]} · ${size/10} cm`, M, M+2);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(110);
+        doc.text(`Print at 100% / Actual size. Content = facility × 65536 + card (AxTraxPro Simple text).   Page ${pi+1} of ${pages}`, M, M+6.5);
+      }
+      const c=k%cols, r=Math.floor(k/cols);
+      const x=offX + c*cellW, y=M+HEAD + r*cellH;
+      const cx = x + (cellW-gapX-codeW)/2;
+      const id=credId(q.fc,q.card);
+      const cv=document.createElement('canvas'); drawCode(cv, id, sym, 8);
+      doc.addImage(cv.toDataURL('image/png'),'PNG', cx, y, codeW, codeH);
+      const mid = x + (cellW-gapX)/2;
+      doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+      doc.text(`FC ${q.fc} / Card ${q.card}`, mid, y+codeH+4, {align:'center'});
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90);
+      doc.text(`${id} · ${q.fmt}-bit`, mid, y+codeH+7.5, {align:'center'});
+      if(q.label){ doc.setTextColor(20); doc.text(doc.splitTextToSize(q.label, cellW-gapX)[0], mid, y+codeH+10.8, {align:'center'}); }
+    });
+    doc.save(filename);
+  }
+
+  // ---------- init ----------
+  load();
+  seg('fmtSeg','fmt',refreshSettings);
+  seg('symSeg','sym',refreshSettings);
+  $('size').addEventListener('change',save); $('ec').addEventListener('change',()=>{save();renderSingle();});
+  refreshSettings();
+})();
+</script>
+</body>
+</html>
